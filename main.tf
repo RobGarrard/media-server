@@ -56,6 +56,22 @@ resource "aws_route_table_association" "media_server_public_rt_assoc" {
 }
 
 # -----------------------------------------------------------------------------#
+# Route53
+
+resource "aws_route53_zone" "main" {
+  name = "robort.site" 
+}
+
+resource "aws_route53_record" "www" {
+  zone_id = aws_route53_zone.main.zone_id
+  name    = ""
+  type    = "A"
+  ttl     = "300"
+  records = [aws_instance.media_server.public_ip]
+}
+
+
+# -----------------------------------------------------------------------------#
 # Security Groups
 
 resource "aws_security_group" "media_server_sg" {
@@ -122,12 +138,15 @@ resource "aws_instance" "media_server" {
     subnet_id = aws_subnet.media_server_public_subnet.id
     
     root_block_device {
-        volume_size = 50
+        volume_size = 8
         volume_type = "gp3"
     }
 
 
     user_data = file("${path.module}/scripts/media_server_startup.sh")
+
+    iam_instance_profile = aws_iam_instance_profile.ec2_instance_profile.name
+
     
     tags = {
         Name = "media-server"
@@ -138,3 +157,69 @@ output "instance_public_ip" {
     value = aws_instance.media_server.public_ip
 }
 
+# -----------------------------------------------------------------------------#
+# S3 Bucket
+
+resource "aws_s3_bucket" "robs_media_server" {
+  bucket = "robs-media-server"
+
+  tags = {
+    Name = "robs-media-server"
+  }
+}
+
+#-----------------------------------------------------------------------------#
+# IAM
+
+# IAM Role
+resource "aws_iam_role" "ec2_role" {
+  name = "ec2_role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+# IAM Policy
+resource "aws_iam_policy" "s3_policy" {
+  name        = "s3_policy"
+  description = "Policy to allow EC2 instance to interact with S3"
+  policy      = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = [
+          "s3:ListBucket",
+          "s3:GetObject",
+          "s3:PutObject"
+        ]
+        Effect   = "Allow"
+        Resource = [
+          "arn:aws:s3:::robs-media-server",
+          "arn:aws:s3:::robs-media-server/*"
+        ]
+      }
+    ]
+  })
+}
+
+# Attach Policy to Role
+resource "aws_iam_role_policy_attachment" "ec2_role_policy_attachment" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = aws_iam_policy.s3_policy.arn
+}
+
+# IAM Instance Profile
+resource "aws_iam_instance_profile" "ec2_instance_profile" {
+  name = "ec2_instance_profile"
+  role = aws_iam_role.ec2_role.name
+}

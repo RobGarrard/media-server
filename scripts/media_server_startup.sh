@@ -19,15 +19,22 @@ sudo systemctl enable docker
 # Pull the Jellyfin Docker image
 sudo docker pull jellyfin/jellyfin
 
-
 # Create config and cache directories
 sudo mkdir -p /opt/jellyfin/config
 sudo mkdir -p /opt/jellyfin/cache
 
-# Create the media directory in the home directory
-sudo mkdir -p /home/ubuntu/media
-sudo mkdir -p /home/ubuntu/media/movies
-sudo mkdir -p /home/ubuntu/media/tv_shows
+# Install dependencies for s3fs-fuse
+sudo apt-get install -y automake build-essential libfuse-dev libcurl4-openssl-dev libxml2-dev mime-support
+
+# Install s3fs-fuse
+sudo apt-get install -y s3fs
+
+# Create a directory to mount the S3 bucket
+sudo mkdir -p /mnt/s3
+
+# Mount the S3 bucket
+sudo s3fs robs-media-server /mnt/s3 -o iam_role=auto -o allow_other
+
 
 # Run the Jellyfin container with EFS volume
 sudo docker run -d \
@@ -35,6 +42,6 @@ sudo docker run -d \
     -p 8096:8096 \
     -v /opt/jellyfin/config:/config \
     -v /opt/jellyfin/cache:/cache \
-    -v /home/ubuntu/media:/media \
+    -v /mnt/s3:/media \
     --restart unless-stopped \
     jellyfin/jellyfin

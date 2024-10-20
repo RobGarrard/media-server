@@ -95,7 +95,7 @@ resource "aws_security_group" "media_server_sg" {
         from_port   = 8096
         to_port     = 8096
         protocol    = "tcp"
-        cidr_blocks = ["45.248.79.184/32"]
+        cidr_blocks = ["0.0.0.0/0"]
     }
 
     egress {
@@ -110,49 +110,6 @@ resource "aws_security_group" "media_server_sg" {
     }
 }
 
-# Security Group for EFS
-resource "aws_security_group" "efs_sg" {
-    vpc_id = aws_vpc.media_server.id
-    name        = "efs-sg"
-    description = "Security group for EFS"
-
-    ingress {
-        from_port   = 2049
-        to_port     = 2049
-        protocol    = "tcp"
-        cidr_blocks = ["0.0.0.0/0"]
-    }
-
-    egress {
-        from_port   = 0
-        to_port     = 0
-        protocol    = "-1"
-        cidr_blocks = ["0.0.0.0/0"]
-    }
-
-    tags = {
-        Name = "efs-sg"
-    }
-}
-
-# -----------------------------------------------------------------------------#
-# EFS File System
-
-resource "aws_efs_file_system" "efs" {
-    creation_token = "media-server-efs"
-
-    tags = {
-        Name = "media-server-efs"
-    }
-}
-
-# EFS Mount Target
-resource "aws_efs_mount_target" "efs_mount" {
-    file_system_id  = aws_efs_file_system.efs.id
-    subnet_id       = aws_subnet.media_server_public_subnet.id
-    security_groups = [aws_security_group.efs_sg.id]
-}
-
 # -----------------------------------------------------------------------------#
 # EC2 
 
@@ -163,36 +120,15 @@ resource "aws_instance" "media_server" {
     vpc_security_group_ids = [aws_security_group.media_server_sg.id]
     
     subnet_id = aws_subnet.media_server_public_subnet.id
-    associate_public_ip_address = true
+    
+    root_block_device {
+        volume_size = 50
+        volume_type = "gp3"
+    }
 
-    user_data = <<-EOF
-        #!/bin/bash
-        # Update the package repository
-        sudo apt-get update -y
 
-        # Install Docker
-        sudo apt-get install -y docker.io
-
-        # Start Docker service
-        sudo systemctl start docker
-        sudo systemctl enable docker
-
-        # Install EFS mount helper
-        sudo apt-get install -y amazon-efs-utils
-
-        # Create a directory for EFS mount
-        sudo mkdir -p /mnt/efs
-
-        # Mount the EFS file system
-        sudo mount -t efs -o tls ${aws_efs_file_system.efs.id}:/ /mnt/efs
-
-        # Pull the Jellyfin Docker image
-        sudo docker pull jellyfin/jellyfin
-
-        # Run the Jellyfin container with EFS volume
-        sudo docker run -d --name jellyfin -p 8096:8096 -v /mnt/efs:/config jellyfin/jellyfin
-    EOF
-
+    user_data = file("${path.module}/scripts/media_server_startup.sh")
+    
     tags = {
         Name = "media-server"
     }

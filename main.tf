@@ -131,7 +131,7 @@ resource "aws_security_group" "media_server_sg" {
 
 resource "aws_instance" "media_server" {
     ami           = "ami-001f2488b35ca8aad"
-    instance_type = "t2.micro"
+    instance_type = "t2.small"
     key_name      = "media-server"
     vpc_security_group_ids = [aws_security_group.media_server_sg.id]
     
